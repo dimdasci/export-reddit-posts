@@ -5,13 +5,14 @@ import datetime
 from pytz import timezone
 from dotenv import load_dotenv
 import os
-import logging 
+import logging
 import csv
 import requests
 import random
 import time
 
-TIMEZONE = timezone('UTC')
+TIMEZONE = timezone("UTC")
+
 
 def save_to_csv(data: list, column_names: list, file_path: str) -> None:
     """Saves data in 2D-list to a CSV file with column_names"""
@@ -54,6 +55,7 @@ def setup_logging(logfile: str = "log.txt", loglevel: str = "DEBUG") -> None:
     logger.addHandler(fh)
     logger.addHandler(ch)
 
+
 def init_api():
     """Inits Reddit APIs and returns headers with auth token"""
 
@@ -62,58 +64,73 @@ def init_api():
     load_dotenv()
 
     auth = requests.auth.HTTPBasicAuth(
-            os.getenv("CLIENT_ID"), 
-            os.getenv("SECRET_TOKEN"))
-    data = {'grant_type': 'password',
-            'username': os.getenv("USERNAME"),
-            'password': os.getenv("PASSWORD")}
+        os.getenv("CLIENT_ID"), os.getenv("SECRET_TOKEN")
+    )
+    data = {
+        "grant_type": "password",
+        "username": os.getenv("USERNAME"),
+        "password": os.getenv("PASSWORD"),
+    }
 
-    headers = {'User-Agent': os.getenv("USERAGENT")}
-    res = requests.post('https://www.reddit.com/api/v1/access_token',
-                    auth=auth, data=data, headers=headers)
+    headers = {"User-Agent": os.getenv("USERAGENT")}
+    res = requests.post(
+        "https://www.reddit.com/api/v1/access_token",
+        auth=auth,
+        data=data,
+        headers=headers,
+    )
 
     # convert response to JSON and pull access_token value
-    TOKEN = res.json()['access_token']
+    TOKEN = res.json()["access_token"]
 
     # add authorization to our headers dictionary
-    headers = {**headers, **{'Authorization': f"bearer {TOKEN}"}}
+    headers = {**headers, **{"Authorization": f"bearer {TOKEN}"}}
 
     # while the token is valid (~2 hours) we just add headers=headers to our requests
-    response = requests.get('https://oauth.reddit.com/api/v1/me', headers=headers)
+    response = requests.get(
+        "https://oauth.reddit.com/api/v1/me", headers=headers
+    )
     logging.info(f"API is initialized with {response}")
 
     return headers
 
-def get_posts(subreddit: str, headers: dict, fields: list, data: list = None) -> list:
+
+def get_posts(
+    subreddit: str, headers: dict, fields: list, data: list = None
+) -> list:
     """Imports 50 hot posts from subreddit"""
 
     url = f"https://oauth.reddit.com/r/{subreddit}/hot"
 
-    logging.info(f"Getting posts for {url}") 
+    logging.info(f"Getting posts for {url}")
 
-    if data is None: 
+    if data is None:
         logging.warn("Data was not given, set to an empty list")
         data = []
 
-    response = requests.get(url, headers=headers, params={'limit': '50'})
+    response = requests.get(url, headers=headers, params={"limit": "50"})
     logging.info(response)
 
     for post in response.json()["data"]["children"]:
         row = []
         for f in fields:
-            if f in post['data']:
-                if f == 'created_utc':
-                    row.append(datetime.datetime.fromtimestamp(post['data'][f], tz=TIMEZONE))
+            if f in post["data"]:
+                if f == "created_utc":
+                    row.append(
+                        datetime.datetime.fromtimestamp(
+                            post["data"][f], tz=TIMEZONE
+                        )
+                    )
                 else:
-                    row.append(post['data'][f])
+                    row.append(post["data"][f])
             else:
                 row.append(None)
 
         data.append(row)
-    
+
     logging.info(f"Exported {len(response.json()['data']['children'])} posts")
     return data
- 
+
 
 @click.command()
 @click.argument("subreddits", type=click.STRING, nargs=-1)
@@ -121,23 +138,34 @@ def export_posts(subreddits) -> None:
     """Exports 50 hot posts of given subreddirts"""
 
     random.seed(15)
-    
-    fields = ['subreddit', 'author', 'created_utc', 
-              'title', 'selftext', 'upvote_ratio', 'ups',
-              'downs', 'crossposts', 'link_flair_text', 
-               'id','kind', 'url' ]
+
+    fields = [
+        "subreddit",
+        "author",
+        "created_utc",
+        "title",
+        "selftext",
+        "upvote_ratio",
+        "ups",
+        "downs",
+        "crossposts",
+        "link_flair_text",
+        "id",
+        "kind",
+        "url",
+    ]
 
     setup_logging(logfile="data/log.txt", loglevel="INFO")
 
     logging.info(f"Starting export for subreddits {', '.join(subreddits)}")
-    
+
     headers = init_api()
 
     posts = []
     for s in subreddits:
         posts = get_posts(s, headers=headers, fields=fields, data=posts)
-        time.sleep(random.random()*5 + random.random()*2)
-        
+        time.sleep(random.random() * 5 + random.random() * 2)
+
     if len(posts) > 0:
         save_to_csv(posts, fields, "data/posts.csv")
 
