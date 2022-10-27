@@ -96,7 +96,11 @@ def init_api():
 
 
 def get_posts(
-    subreddit: str, headers: dict, fields: list, number: int = 50, data: list = None
+    subreddit: str,
+    headers: dict,
+    fields: list,
+    number: int = 50,
+    data: list = None,
 ) -> list:
     """Imports 50 hot posts from subreddit"""
 
@@ -108,12 +112,10 @@ def get_posts(
         logging.warn("Data was not given, set to an empty list")
         data = []
 
-
-
     number_to_load = number
     params = dict()
 
-    while(number_to_load > 0):
+    while number_to_load > 0:
         params["limit"] = str(min(100, number_to_load))
         response = requests.get(url, headers=headers, params=params)
         logging.info(response)
@@ -136,15 +138,19 @@ def get_posts(
 
             data.append(row)
         number_to_load -= len(posts)
-        params["after"] = posts[-1]["kind"] + '_' + posts[-1]["data"]['id']
-        logging.info(f"Exported {len(posts)} posts, rest {max(0, number_to_load)}")
-    
+        params["after"] = posts[-1]["kind"] + "_" + posts[-1]["data"]["id"]
+        logging.info(
+            f"Exported {len(posts)} posts, rest {max(0, number_to_load)}"
+        )
+
     return data
 
 
 @click.command()
 @click.argument("subreddits", type=click.STRING, nargs=-1)
-@click.option("-n", "--number", default=50, type=int, help="number of posts to export")
+@click.option(
+    "-n", "--number", default=50, type=int, help="number of posts to export"
+)
 def export_posts(subreddits: list, number: int) -> None:
     """Exports Number hot posts of given subreddirts"""
 
@@ -174,7 +180,9 @@ def export_posts(subreddits: list, number: int) -> None:
 
     posts = []
     for s in subreddits:
-        posts = get_posts(s, headers=headers, fields=fields, data=posts, number=number)
+        posts = get_posts(
+            s, headers=headers, fields=fields, data=posts, number=number
+        )
         time.sleep(random.random() * 5 + random.random() * 2)
 
     if len(posts) > 0:
