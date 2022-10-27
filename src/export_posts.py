@@ -95,14 +95,92 @@ def init_api():
     return headers
 
 
+def parse_fields(kind: str, parent: str, message: list, fields: list) -> list:
+    """Parse params of a row with post or comment data"""
+
+    row = []
+    for f in fields:
+        if f == "kind":
+            row.append(kind)
+        elif f == "text":
+            fname = "selftext" if kind == "post" else "body"
+            row.append(message["data"].get(fname))
+        elif f in message["data"]:
+            if f == "parent_id":
+                row.append(parent)
+            elif f == "created_utc":
+                row.append(
+                    datetime.datetime.fromtimestamp(
+                        message["data"][f], tz=TIMEZONE
+                    )
+                )
+            else:
+                row.append(message["data"][f])
+        else:
+            row.append(None)
+
+    return row
+
+
+def parse_comments(
+    kind: str, parent: str, messages: list, fields: list, data: list
+) -> list:
+    """Parses messages and returns flat list"""
+
+    for m in messages:
+        row = parse_fields(kind=kind, parent=parent, message=m, fields=fields)
+        data.append(row)
+
+        if "replies" in m["data"] and len(m["data"]["replies"]) > 0:
+            data = parse_comments(
+                kind=kind,
+                parent=parent,
+                messages=m["data"]["replies"]["data"]["children"],
+                fields=fields,
+                data=data,
+            )
+
+    return data
+
+
+def get_comments(
+    subreddit: str, headers: dict, fields: list, post_id: str, data: list
+) -> list:
+    """Export 100 comments for a given post"""
+
+    logging.info(f"Getting comments for r/{subreddit}/comments/{post_id}")
+    url = f"https://oauth.reddit.com/r/{subreddit}/comments/{post_id}"
+
+    response = requests.get(url, headers=headers, params={"limit": "100"})
+    comments = response.json()
+
+    if len(comments[1]["data"]["children"]) == 0:
+        logging.info("Post has no comments")
+        return data
+
+    len_before = len(data)
+    data = parse_comments(
+        kind="comment",
+        parent=post_id,
+        messages=comments[1]["data"]["children"],
+        fields=fields,
+        data=data,
+    )
+
+    logging.info(f"Exported {len(data) - len_before} comments")
+
+    return data
+
+
 def get_posts(
     subreddit: str,
     headers: dict,
     fields: list,
     number: int = 50,
+    comments: bool = False,
     data: list = None,
 ) -> list:
-    """Imports 50 hot posts from subreddit"""
+    """Exports number hot posts from subreddit with or without comments"""
 
     url = f"https://oauth.reddit.com/r/{subreddit}/hot"
 
@@ -122,23 +200,25 @@ def get_posts(
 
         posts = response.json()["data"]["children"]
         for post in posts:
-            row = []
-            for f in fields:
-                if f in post["data"]:
-                    if f == "created_utc":
-                        row.append(
-                            datetime.datetime.fromtimestamp(
-                                post["data"][f], tz=TIMEZONE
-                            )
-                        )
-                    else:
-                        row.append(post["data"][f])
-                else:
-                    row.append(None)
-
+            row = parse_fields(
+                kind="post", parent="", message=post, fields=fields
+            )
             data.append(row)
-        number_to_load -= len(posts)
-        params["after"] = posts[-1]["kind"] + "_" + posts[-1]["data"]["id"]
+            if comments:
+                data = get_comments(
+                    subreddit=subreddit,
+                    headers=headers,
+                    fields=fields,
+                    post_id=post["data"]["id"],
+                    data=data,
+                )
+                time.sleep(random.random() * 3 + random.random())
+
+        if len(posts) < int(params["limit"]):
+            number_to_load = 0
+        else:
+            number_to_load -= len(posts)
+            params["after"] = posts[-1]["kind"] + "_" + posts[-1]["data"]["id"]
         logging.info(
             f"Exported {len(posts)} posts, rest {max(0, number_to_load)}"
         )
@@ -151,24 +231,28 @@ def get_posts(
 @click.option(
     "-n", "--number", default=50, type=int, help="number of posts to export"
 )
-def export_posts(subreddits: list, number: int) -> None:
-    """Exports Number hot posts of given subreddirts"""
+@click.option(
+    "-c", "--comments", is_flag=True, help="export comments to each post"
+)
+def export_posts(subreddits: list, number: int, comments: bool) -> None:
+    """Exports Number hot posts of given subreddits"""
 
     random.seed(15)
 
     fields = [
+        "id",
+        "kind",
+        "parent_id",
         "subreddit",
         "author",
         "created_utc",
         "title",
-        "selftext",
+        "text",
         "upvote_ratio",
         "ups",
         "downs",
         "crossposts",
         "link_flair_text",
-        "id",
-        "kind",
         "url",
     ]
 
@@ -181,7 +265,12 @@ def export_posts(subreddits: list, number: int) -> None:
     posts = []
     for s in subreddits:
         posts = get_posts(
-            s, headers=headers, fields=fields, data=posts, number=number
+            s,
+            headers=headers,
+            fields=fields,
+            data=posts,
+            number=number,
+            comments=comments,
         )
         time.sleep(random.random() * 5 + random.random() * 2)
 
