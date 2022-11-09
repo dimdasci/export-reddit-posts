@@ -2,8 +2,13 @@
 
 Based on [How to Use the Reddit API in Python](https://towardsdatascience.com/how-to-use-the-reddit-api-in-python-5e05ddfd1e5c) article by James Briggs.
 
+## Installation
 
-Usage: `export_posts.py [OPTIONS] [SUBREDDITS]...`
+  make requirements
+
+## Usage
+
+  export_posts.py [OPTIONS] [SUBREDDITS]...
 
   Exports posts and comments of given subreddits
 
