@@ -90,7 +90,7 @@ def init_api():
     response = requests.get(
         "https://oauth.reddit.com/api/v1/me", headers=headers
     )
-    logging.info(f"API is initialized with {response}")
+    logging.info(f"API is initialized with {response.status_code} code")
 
     return headers
 
@@ -152,6 +152,10 @@ def get_comments(
     url = f"https://oauth.reddit.com/r/{subreddit}/comments/{post_id}"
 
     response = requests.get(url, headers=headers, params={"limit": "100"})
+    if response.status_code != 200:
+        logging.error(f"Got {response.status_code} response")
+        return []
+
     comments = response.json()
 
     if len(comments[1]["data"]["children"]) == 0:
@@ -177,14 +181,22 @@ def get_posts(
     headers: dict,
     fields: list,
     number: int = 50,
+    days: int = None,
     comments: bool = False,
     data: list = None,
 ) -> list:
     """Exports number hot posts from subreddit with or without comments"""
 
-    url = f"https://oauth.reddit.com/r/{subreddit}/hot"
+    kind = "hot" if days is None else "new"
+    url = f"https://oauth.reddit.com/r/{subreddit}/{kind}"
 
-    logging.info(f"Getting {number} posts for {url}")
+    logging.info(f"Getting {number} posts for {days} days at {url}")
+
+    now_time, post_time_limit = None, None
+    if days is not None:
+        # calculate time frame for post export
+        now_time = datetime.datetime.now().timestamp()
+        post_time_limit = now_time - days * 24 * 60 * 60
 
     if data is None:
         logging.warn("Data was not given, set to an empty list")
@@ -196,10 +208,20 @@ def get_posts(
     while number_to_load > 0:
         params["limit"] = str(min(100, number_to_load))
         response = requests.get(url, headers=headers, params=params)
-        logging.info(response)
+        if response.status_code != 200:
+            logging.error(f"Got {response.status_code} response")
+            number_to_load -= params["limit"]
+            continue
 
         posts = response.json()["data"]["children"]
         for post in posts:
+            if (
+                post_time_limit is not None
+                and post["data"]["created_utc"] < post_time_limit
+            ):
+                logging.info("Number of days limit is reached")
+                break
+
             row = parse_fields(
                 kind="post", parent="", message=post, fields=fields
             )
@@ -216,6 +238,7 @@ def get_posts(
 
         if len(posts) < int(params["limit"]):
             number_to_load = 0
+            logging.info("Number of post to export is reached")
         else:
             number_to_load -= len(posts)
             params["after"] = posts[-1]["kind"] + "_" + posts[-1]["data"]["id"]
@@ -232,9 +255,14 @@ def get_posts(
     "-n", "--number", default=50, type=int, help="number of posts to export"
 )
 @click.option(
+    "-d", "--days", type=int, help="number of days from now to to export posts"
+)
+@click.option(
     "-c", "--comments", is_flag=True, help="export comments to each post"
 )
-def export_posts(subreddits: list, number: int, comments: bool) -> None:
+def export_posts(
+    subreddits: list, number: int, days: int, comments: bool
+) -> None:
     """Exports Number hot posts of given subreddits"""
 
     random.seed(15)
@@ -270,6 +298,7 @@ def export_posts(subreddits: list, number: int, comments: bool) -> None:
             fields=fields,
             data=posts,
             number=number,
+            days=days,
             comments=comments,
         )
         time.sleep(random.random() * 5 + random.random() * 2)
