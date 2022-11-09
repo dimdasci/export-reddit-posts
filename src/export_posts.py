@@ -258,10 +258,20 @@ def get_posts(
     "-d", "--days", type=int, help="number of days from now to to export posts"
 )
 @click.option(
+    "-o", "--output", type=click.STRING, help="path to an output file"
+)
+@click.option(
+    "-l",
+    "--log",
+    default="log.txt",
+    type=click.STRING,
+    help="path to a log file",
+)
+@click.option(
     "-c", "--comments", is_flag=True, help="export comments to each post"
 )
 def export_posts(
-    subreddits: list, number: int, days: int, comments: bool
+    subreddits: list, number: int, days: int, output: str, log: str, comments: bool
 ) -> None:
     """Exports Number hot posts of given subreddits"""
 
@@ -284,7 +294,7 @@ def export_posts(
         "url",
     ]
 
-    setup_logging(logfile="data/log.txt", loglevel="INFO")
+    setup_logging(logfile=log, loglevel="INFO")
 
     logging.info(f"Starting export for subreddits {', '.join(subreddits)}")
 
@@ -304,7 +314,7 @@ def export_posts(
         time.sleep(random.random() * 5 + random.random() * 2)
 
     if len(posts) > 0:
-        save_to_csv(posts, fields, "data/posts.csv")
+        save_to_csv(posts, fields, output)
 
     logging.info(f"Got {len(posts)} from subreddits {', '.join(subreddits)}")
 
