@@ -10,6 +10,8 @@ import csv
 import requests
 import random
 import time
+import pyarrow.parquet as pq
+import pyarrow as pa
 
 TIMEZONE = timezone("UTC")
 
@@ -26,6 +28,19 @@ def save_to_csv(data: list, column_names: list, file_path: str) -> None:
     except Exception as e:
         logging.error(f"Can't save data to {file_path}", e)
 
+
+def save_to_parquet(data: list, column_names: list, file_path: str) -> None:
+    """Saves data in 2D-list to a Apache Arrow parquet file with column_names"""
+
+    # prepare dict for save
+    pd = dict()
+    for i, col in enumerate(zip(*data)):
+        pd[column_names[i]] = col
+    
+    try:
+        pq.write_table(pa.Table.from_pydict(pd), file_path)
+    except Exception as e:
+        logging.error(f"Can't save data to {file_path}", e)
 
 def setup_logging(logfile: str = "log.txt", loglevel: str = "DEBUG") -> None:
     """
@@ -258,6 +273,13 @@ def get_posts(
     "-d", "--days", type=int, help="number of days from now to to export posts"
 )
 @click.option(
+    "-f",
+    "--output-format",
+    default="cvs",
+    type=click.Choice(["csv", "parquet"], case_sensitive=False),
+    help="an output file format: csv or parquet",
+)
+@click.option(
     "-o", "--output", type=click.STRING, help="path to an output file"
 )
 @click.option(
@@ -271,9 +293,15 @@ def get_posts(
     "-c", "--comments", is_flag=True, help="export comments to each post"
 )
 def export_posts(
-    subreddits: list, number: int, days: int, output: str, log: str, comments: bool
+    subreddits: list,
+    number: int,
+    days: int,
+    output_format: str,
+    output: str,
+    log: str,
+    comments: bool,
 ) -> None:
-    """Exports Number hot posts of given subreddits"""
+    """Exports posts and comments of given subreddits"""
 
     random.seed(15)
 
@@ -314,7 +342,10 @@ def export_posts(
         time.sleep(random.random() * 5 + random.random() * 2)
 
     if len(posts) > 0:
-        save_to_csv(posts, fields, output)
+        if output_format == "csv":
+            save_to_csv(posts, fields, output)
+        else:
+            save_to_parquet(posts, fields, output)
 
     logging.info(f"Got {len(posts)} from subreddits {', '.join(subreddits)}")
 
